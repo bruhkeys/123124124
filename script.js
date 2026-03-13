@@ -1,145 +1,176 @@
-// --- CONFIGURATION ---
-const UNIT = 6;
-const WALL_H = 8;
-const MOVE_SPEED = 0.07;  // Slower movement
-const ROT_SPEED = 0.025;  // Slower rotation
-const GHOST_SPEED = 0.01; // Slower ghost chase
-const PLAYER_RAD = 1.2;   // Wall collision buffer
+/**
+ * MAZE RUNNER: FRIEND EDITION
+ * Controls: 
+ * WASD - Move
+ * Arrow Left/Right - Rotate Camera
+ */
 
+// --- 1. CORE THREE.JS SETUP ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050505); // Near black
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- 2. LIGHTING ---
+const ambientLight = new THREE.AmbientLight(0x404040, 0.2); // Very dim ambient
+scene.add(ambientLight);
+
+const flashLight = new THREE.PointLight(0xffffff, 1.2, 15); // Player's flashlight
+scene.add(flashLight);
+
+// --- 3. MAZE DATA & GENERATION ---
+// 1 = Wall, 0 = Path
 const mazeData = [
-    [1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,0,0,0,0,0,1],
-    [1,0,1,0,1,0,1,1,1,1,0,1],
-    [1,0,1,0,0,0,0,0,0,1,0,1],
-    [1,0,1,1,1,1,0,1,0,1,0,1],
-    [1,0,0,0,0,0,0,1,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1]
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    [1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1],
+    [1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+    [1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1],
+    [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1],
+    [1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
+    [1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1],
+    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ];
 
-let scene, camera, renderer, flashlight;
-const ghosts = [];
-const keys = {};
-let rotY = 0;
+const unitSize = 6;
+const wallHeight = 8;
 
-function init() {
-    scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x000000, 1, 18);
-    
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    // Start player in a safe empty cell
-    camera.position.set(-18, 2, -10); 
+// Create Wall Mesh
+const wallGeo = new THREE.BoxGeometry(unitSize, wallHeight, unitSize);
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    flashlight = new THREE.PointLight(0xffffff, 1.5, 15);
-    scene.add(flashlight);
-
-    // Build Walls
-    const wallGeo = new THREE.BoxGeometry(UNIT, WALL_H, UNIT);
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-
-    mazeData.forEach((row, r) => {
-        row.forEach((val, c) => {
-            if (val === 1) {
-                const wall = new THREE.Mesh(wallGeo, wallMat);
-                wall.position.set((c - row.length/2)*UNIT, WALL_H/2, (r - mazeData.length/2)*UNIT);
-                scene.add(wall);
-            }
-        });
-    });
-
-    // Ground
-    const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(100, 100),
-        new THREE.MeshStandardMaterial({ color: 0x050505 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    scene.add(ground);
-
-    // Ghosts
-    const loader = new THREE.TextureLoader();
-    const friendTex = loader.load('friend.jpg'); 
-
-    for(let i=0; i<3; i++) {
-        const gMat = new THREE.MeshBasicMaterial({ map: friendTex, transparent: true, side: THREE.DoubleSide });
-        const g = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), gMat);
-        g.position.set(Math.random()*20-10, 2, Math.random()*20-10);
-        scene.add(g);
-        ghosts.push(g);
+for (let row = 0; row < mazeData.length; row++) {
+    for (let col = 0; col < mazeData[row].length; col++) {
+        if (mazeData[row][col] === 1) {
+            const wall = new THREE.Mesh(wallGeo, wallMat);
+            wall.position.set(
+                (col - mazeData[row].length / 2) * unitSize,
+                wallHeight / 2,
+                (row - mazeData.length / 2) * unitSize
+            );
+            scene.add(wall);
+        }
     }
-
-    // Start loop immediately
-    animate();
 }
 
-function canMoveTo(x, z) {
-    const c = Math.floor((x / UNIT) + (mazeData[0].length / 2) + 0.5);
-    const r = Math.floor((z / UNIT) + (mazeData.length / 2) + 0.5);
-    if (r < 0 || r >= mazeData.length || c < 0 || c >= mazeData[0].length) return false;
-    return mazeData[r][c] === 0;
+// Create Ground
+const groundGeo = new THREE.PlaneGeometry(100, 100);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// --- 4. PLAYER & GHOSTS ---
+let playerRotation = 0;
+const startPos = { x: -25, z: -25 }; // Starting in a corner
+camera.position.set(startPos.x, 2, startPos.z);
+
+const ghosts = [];
+const textureLoader = new THREE.TextureLoader();
+const ghostTex = textureLoader.load('friend.jpg'); // PLACEHOLDER: Ensure this exists!
+
+function spawnGhost() {
+    const ghostMat = new THREE.MeshBasicMaterial({ map: ghostTex, transparent: true, side: THREE.DoubleSide });
+    const ghostGeo = new THREE.PlaneGeometry(4, 4);
+    const ghost = new THREE.Mesh(ghostGeo, ghostMat);
+    
+    // Position randomly in an empty spot
+    ghost.position.set(Math.random() * 40 - 20, 2, Math.random() * 40 - 20);
+    scene.add(ghost);
+    ghosts.push(ghost);
 }
+
+for(let i=0; i<4; i++) spawnGhost();
+
+// --- 5. INPUT HANDLING ---
+const keys = { 
+    KeyW: false, KeyA: false, KeyS: false, KeyD: false, 
+    ArrowLeft: false, ArrowRight: false 
+};
+
+window.addEventListener('keydown', (e) => { if (e.code in keys) keys[e.code] = true; });
+window.addEventListener('keyup', (e) => { if (e.code in keys) keys[e.code] = false; });
+
+// --- 6. COLLISION & MOVEMENT LOGIC ---
+function isWall(x, z) {
+    const col = Math.floor((x / unitSize) + (mazeData[0].length / 2) + 0.5);
+    const row = Math.floor((z / unitSize) + (mazeData.length / 2) + 0.5);
+    
+    if (row < 0 || row >= mazeData.length || col < 0 || col >= mazeData[0].length) return true;
+    return mazeData[row][col] === 1;
+}
+
+// --- 7. ANIMATION LOOP ---
+const rotSpeed = 0.04;
+const moveSpeed = 0.15;
 
 function animate() {
     requestAnimationFrame(animate);
 
-    // Rotation (Arrow Keys)
-    if (keys['ArrowLeft']) rotY += ROT_SPEED;
-    if (keys['ArrowRight']) rotY -= ROT_SPEED;
-    camera.rotation.y = rotY;
+    // Rotate Camera
+    if (keys.ArrowLeft) playerRotation += rotSpeed;
+    if (keys.ArrowRight) playerRotation -= rotSpeed;
+    camera.rotation.y = playerRotation;
 
-    // Movement (WASD)
-    let dx = 0; let dz = 0;
-    const speed = keys['ShiftLeft'] ? 0.12 : MOVE_SPEED;
-
-    if (keys['KeyW']) { dx -= Math.sin(rotY) * speed; dz -= Math.cos(rotY) * speed; }
-    if (keys['KeyS']) { dx += Math.sin(rotY) * speed; dz += Math.cos(rotY) * speed; }
-    if (keys['KeyA']) { dx -= Math.cos(rotY) * speed; dz += Math.sin(rotY) * speed; }
-    if (keys['KeyD']) { dx += Math.cos(rotY) * speed; dz -= Math.sin(rotY) * speed; }
-
-    // Collision Logic (Sliding)
-    const nextX = camera.position.x + dx;
-    const nextZ = camera.position.z + dz;
-
-    if (canMoveTo(nextX + (dx > 0 ? PLAYER_RAD : -PLAYER_RAD), camera.position.z)) {
-        camera.position.x = nextX;
+    // Calculate Intended Movement
+    let dx = 0;
+    let dz = 0;
+    if (keys.KeyW) {
+        dx += -Math.sin(playerRotation) * moveSpeed;
+        dz += -Math.cos(playerRotation) * moveSpeed;
     }
-    if (canMoveTo(camera.position.x, nextZ + (dz > 0 ? PLAYER_RAD : -PLAYER_RAD))) {
-        camera.position.z = nextZ;
+    if (keys.KeyS) {
+        dx -= -Math.sin(playerRotation) * moveSpeed;
+        dz -= -Math.cos(playerRotation) * moveSpeed;
+    }
+    if (keys.KeyA) {
+        dx += -Math.cos(playerRotation) * moveSpeed;
+        dz -= Math.sin(playerRotation) * moveSpeed;
+    }
+    if (keys.KeyD) {
+        dx -= -Math.cos(playerRotation) * moveSpeed;
+        dz += Math.sin(playerRotation) * moveSpeed;
     }
 
-    // Ghost Chase
-    ghosts.forEach(g => {
-        g.lookAt(camera.position);
-        const dir = new THREE.Vector3().subVectors(camera.position, g.position).normalize();
-        g.position.add(dir.multiplyScalar(GHOST_SPEED));
+    // Apply Collision (Checking X and Z separately for sliding)
+    const buffer = 0.3; // Distance to keep from walls
+    if (!isWall(camera.position.x + dx + (dx > 0 ? buffer : -buffer), camera.position.z)) {
+        camera.position.x += dx;
+    }
+    if (!isWall(camera.position.x, camera.position.z + dz + (dz > 0 ? buffer : -buffer))) {
+        camera.position.z += dz;
+    }
 
-        if (g.position.distanceTo(camera.position) < 1.5) {
-            // Death Flash
-            document.body.style.background = "red";
-            setTimeout(() => { 
-                document.body.style.background = "black";
-                camera.position.set(-18, 2, -10); // Reset position
-            }, 100);
+    // Update Flashlight
+    flashLight.position.copy(camera.position);
+
+    // Ghost AI & Billboarding
+    ghosts.forEach(ghost => {
+        ghost.lookAt(camera.position);
+        
+        // Move towards player
+        const dir = new THREE.Vector3().subVectors(camera.position, ghost.position).normalize();
+        ghost.position.add(dir.multiplyScalar(0.03));
+        
+        // Game Over logic
+        if (ghost.position.distanceTo(camera.position) < 1.5) {
+            alert("HE FOUND YOU.");
+            camera.position.set(startPos.x, 2, startPos.z);
         }
     });
 
-    flashlight.position.copy(camera.position);
     renderer.render(scene, camera);
 }
 
-// Input Listeners
-window.addEventListener('keydown', (e) => keys[e.code] = true);
-window.addEventListener('keyup', (e) => keys[e.code] = false);
-
-// Start on Window Load
-window.onload = init;
-
+// Handle Window Resize
 window.addEventListener('resize', () => {
-    if(camera && renderer) {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    }
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+animate();
