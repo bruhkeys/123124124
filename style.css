@@ -1,0 +1,27 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #222;
+    color: white;
+    font-family: 'Arial', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#game-container {
+    position: relative;
+    box-shadow: 0 0 50px rgba(0,0,0,0.5);
+}
+
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 20px;
+    pointer-events: none;
+}
+
+h1 { margin: 0; color: #ff4757; }
+p { font-size: 0.9rem; opacity: 0.8; }
