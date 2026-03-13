@@ -1,211 +1,155 @@
-/**
- * MAZE RUNNER: THE FRIEND EXPERIENCE
- * Controls: 
- * WASD - Move | SHIFT - Sprint
- * Arrow Left/Right - Rotate View
- */
+// --- CONFIGURATION (Slower Speeds) ---
+const UNIT = 6;
+const WALL_H = 8;
+const MOVE_SPEED = 0.08;  // Was 0.15
+const ROT_SPEED = 0.03;   // Was 0.045
+const GHOST_SPEED = 0.012; // Was 0.025
+const PLAYER_RAD = 1.0;   // Collision buffer
 
-// --- 1. SETTINGS & CONSTANTS ---
-const UNIT_SIZE = 6;
-const WALL_HEIGHT = 9;
-const PLAYER_HEIGHT = 2.5;
-const GHOST_SPEED = 0.025;
-const NORMAL_SPEED = 0.12;
-const SPRINT_SPEED = 0.22;
-const ROTATION_SPEED = 0.045;
+const mazeData = [
+    [1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,0,1,0,1,0,1],
+    [1,0,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1]
+];
 
-// --- 2. SCENE SETUP ---
+// --- INITIALIZATION ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
-// Add Fog to hide the edges of the maze and make it spooky
-scene.fog = new THREE.Fog(0x000000, 1, 25); 
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+scene.fog = new THREE.Fog(0x000000, 1, 20);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// --- 3. THE MAZE MAP ---
-const mazeData = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,0,0,0,0,0,1,0,0,1],
-    [1,0,1,0,1,0,1,1,1,1,0,1,0,1,1],
-    [1,0,1,0,0,0,0,0,0,1,0,0,0,0,1],
-    [1,0,1,1,1,1,1,1,0,1,1,1,1,0,1],
-    [1,0,0,0,0,0,0,1,0,0,0,0,1,0,1],
-    [1,1,1,0,1,1,0,1,1,1,1,0,1,0,1],
-    [1,0,0,0,1,0,0,0,0,0,1,0,0,0,1],
-    [1,0,1,1,1,0,1,1,1,0,1,1,1,1,1],
-    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-];
-
-// --- 4. BUILDING THE WORLD ---
-const textureLoader = new THREE.TextureLoader();
-// Wall texture (optional: use a dark brick image if you have one)
-const wallMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-const wallGeo = new THREE.BoxGeometry(UNIT_SIZE, WALL_HEIGHT, UNIT_SIZE);
-
-for (let r = 0; r < mazeData.length; r++) {
-    for (let c = 0; c < mazeData[r].length; c++) {
-        if (mazeData[r][c] === 1) {
-            const wall = new THREE.Mesh(wallGeo, wallMat);
-            wall.position.set(
-                (c - mazeData[r].length / 2) * UNIT_SIZE,
-                WALL_HEIGHT / 2,
-                (r - mazeData.length / 2) * UNIT_SIZE
-            );
-            scene.add(wall);
-        }
-    }
-}
-
-// Floor
-const floorGeo = new THREE.PlaneGeometry(200, 200);
-const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI / 2;
-scene.add(floor);
-
-// --- 5. LIGHTING (The Flashlight) ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.05); // Barely visible
-scene.add(ambientLight);
-
-const flashlight = new THREE.PointLight(0xfff0dd, 1.5, 20); // Warm light
-flashlight.castShadow = true;
+// Lighting
+const flashlight = new THREE.PointLight(0xffffff, 1.2, 18);
 scene.add(flashlight);
 
-// --- 6. PLAYER & INPUTS ---
-let playerRotation = 0;
-camera.position.set(-25, PLAYER_HEIGHT, -20); // Set starting point manually
+// Create Maze
+const wallGeo = new THREE.BoxGeometry(UNIT, WALL_H, UNIT);
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
 
-const keys = {};
-window.addEventListener('keydown', (e) => { keys[e.code] = true; });
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+mazeData.forEach((row, r) => {
+    row.forEach((val, c) => {
+        if (val === 1) {
+            const wall = new THREE.Mesh(wallGeo, wallMat);
+            wall.position.set((c - row.length/2)*UNIT, WALL_H/2, (r - mazeData.length/2)*UNIT);
+            scene.add(wall);
+        }
+    });
+});
 
-// --- 7. GHOSTS (The "Friends") ---
+// Ghosts
 const ghosts = [];
-const ghostTex = textureLoader.load('friend.jpg'); 
+const loader = new THREE.TextureLoader();
+const friendTex = loader.load('friend.jpg'); // Ensure this file exists!
 
 function spawnGhost() {
-    const ghostMat = new THREE.MeshBasicMaterial({ 
-        map: ghostTex, 
-        transparent: true, 
-        side: THREE.DoubleSide 
-    });
-    const ghostGeo = new THREE.PlaneGeometry(4, 4);
-    const ghost = new THREE.Mesh(ghostGeo, ghostMat);
-    
-    // Find an empty cell for spawning
-    let r, c;
-    do {
-        r = Math.floor(Math.random() * mazeData.length);
-        c = Math.floor(Math.random() * mazeData[0].length);
-    } while (mazeData[r][c] === 1);
+    const gMat = new THREE.MeshBasicMaterial({ map: friendTex, transparent: true });
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), gMat);
+    g.position.set(Math.random()*20-10, 2, Math.random()*20-10);
+    scene.add(g);
+    ghosts.push(g);
+}
+for(let i=0; i<3; i++) spawnGhost();
 
-    ghost.position.set(
-        (c - mazeData[0].length / 2) * UNIT_SIZE,
-        2.5,
-        (r - mazeData.length / 2) * UNIT_SIZE
-    );
-    scene.add(ghost);
-    ghosts.push(ghost);
+// --- INPUTS ---
+const keys = {};
+window.addEventListener('keydown', (e) => keys[e.code] = true);
+window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+// --- COLLISION ENGINE ---
+function canMoveTo(x, z) {
+    // Convert coordinate to array index
+    const c = Math.floor((x / UNIT) + (mazeData[0].length / 2) + 0.5);
+    const r = Math.floor((z / UNIT) + (mazeData.length / 2) + 0.5);
+    
+    // Check if index is out of bounds or is a wall
+    if (r < 0 || r >= mazeData.length || c < 0 || c >= mazeData[0].length) return false;
+    return mazeData[r][c] === 0;
 }
 
-for(let i=0; i<5; i++) spawnGhost();
+// --- GAME STATE ---
+let isRunning = false;
+let rotY = 0;
 
-// --- 8. COLLISION LOGIC ---
-function checkCollision(x, z) {
-    const col = Math.floor((x / UNIT_SIZE) + (mazeData[0].length / 2) + 0.5);
-    const row = Math.floor((z / UNIT_SIZE) + (mazeData.length / 2) + 0.5);
-    
-    if (row < 0 || row >= mazeData.length || col < 0 || col >= mazeData[0].length) return true;
-    return mazeData[row][col] === 1;
-}
-
-// --- 9. THE GAME LOOP ---
-let time = 0;
+document.getElementById('start-button').addEventListener('click', () => {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('ui').style.display = 'block';
+    isRunning = true;
+    camera.position.set(-20, 2, -10); // Safe start point
+    animate();
+});
 
 function animate() {
+    if (!isRunning) return;
     requestAnimationFrame(animate);
-    time += 0.05;
 
-    // A. Rotation
-    if (keys['ArrowLeft']) playerRotation += ROTATION_SPEED;
-    if (keys['ArrowRight']) playerRotation -= ROTATION_SPEED;
-    camera.rotation.y = playerRotation;
+    // 1. Rotation (Arrow Keys Fixed)
+    if (keys['ArrowLeft']) rotY += ROT_SPEED;
+    if (keys['ArrowRight']) rotY -= ROT_SPEED;
+    camera.rotation.y = rotY;
 
-    // B. Movement Speed (Sprint)
-    const currentSpeed = keys['ShiftLeft'] || keys['ShiftRight'] ? SPRINT_SPEED : NORMAL_SPEED;
-    
+    // 2. Movement Calculation
     let dx = 0;
     let dz = 0;
+    const speed = (keys['ShiftLeft'] ? SPRINT_SPEED : MOVE_SPEED);
 
     if (keys['KeyW']) {
-        dx -= Math.sin(playerRotation) * currentSpeed;
-        dz -= Math.cos(playerRotation) * currentSpeed;
+        dx -= Math.sin(rotY) * speed;
+        dz -= Math.cos(rotY) * speed;
     }
     if (keys['KeyS']) {
-        dx += Math.sin(playerRotation) * currentSpeed;
-        dz += Math.cos(playerRotation) * currentSpeed;
+        dx += Math.sin(rotY) * speed;
+        dz += Math.cos(rotY) * speed;
     }
     if (keys['KeyA']) {
-        dx -= Math.cos(playerRotation) * currentSpeed;
-        dz += Math.sin(playerRotation) * currentSpeed;
+        dx -= Math.cos(rotY) * speed;
+        dz += Math.sin(rotY) * speed;
     }
     if (keys['KeyD']) {
-        dx += Math.cos(playerRotation) * currentSpeed;
-        dz -= Math.sin(playerRotation) * currentSpeed;
+        dx += Math.cos(rotY) * speed;
+        dz -= Math.sin(rotY) * speed;
     }
 
-    // C. Sliding Collision
-    const buffer = 1.2;
-    if (!checkCollision(camera.position.x + dx + (dx > 0 ? buffer : -buffer), camera.position.z)) {
-        camera.position.x += dx;
+    // 3. Wall Collision (Sliding Logic)
+    // We check X and Z separately so you don't stick to walls
+    const nextX = camera.position.x + dx;
+    const nextZ = camera.position.z + dz;
+
+    if (canMoveTo(nextX + (dx > 0 ? PLAYER_RAD : -PLAYER_RAD), camera.position.z)) {
+        camera.position.x = nextX;
     }
-    if (!checkCollision(camera.position.x, camera.position.z + dz + (dz > 0 ? buffer : -buffer))) {
-        camera.position.z += dz;
+    if (canMoveTo(camera.position.x, nextZ + (dz > 0 ? PLAYER_RAD : -PLAYER_RAD))) {
+        camera.position.z = nextZ;
     }
 
-    // D. Spooky Flashlight Flicker
-    flashlight.position.copy(camera.position);
-    flashlight.intensity = 1.5 + Math.random() * 0.5; // Constant slight flicker
-    if (Math.random() > 0.98) flashlight.intensity = 0.1; // Sudden dimming
+    // 4. Ghost AI (Slower)
+    ghosts.forEach(g => {
+        g.lookAt(camera.position);
+        const dir = new THREE.Vector3().subVectors(camera.position, g.position).normalize();
+        g.position.add(dir.multiplyScalar(GHOST_SPEED));
 
-    // E. Ghost AI
-    ghosts.forEach(ghost => {
-        ghost.lookAt(camera.position);
-        
-        // Move slowly towards player
-        const direction = new THREE.Vector3().subVectors(camera.position, ghost.position).normalize();
-        ghost.position.add(direction.multiplyScalar(GHOST_SPEED));
-
-        // Jumpscare / Catch Logic
-        const dist = ghost.position.distanceTo(camera.position);
-        if (dist < 1.8) {
-            jumpscare();
+        if (g.position.distanceTo(camera.position) < 1.5) {
+            // Jumpscare
+            document.body.style.background = "red";
+            setTimeout(() => { 
+                document.body.style.background = "black";
+                camera.position.set(-20, 2, -10); 
+            }, 300);
         }
     });
 
+    flashlight.position.copy(camera.position);
     renderer.render(scene, camera);
 }
 
-// --- 10. JUMPSCARE MECHANIC ---
-function jumpscare() {
-    // Flash the screen red and reset
-    document.body.style.filter = "invert(1) sepia(1) saturate(10000%) hue-rotate(0deg)";
-    setTimeout(() => {
-        document.body.style.filter = "none";
-        camera.position.set(-25, PLAYER_HEIGHT, -20);
-        playerRotation = 0;
-    }, 500);
-}
-
-// Resize Handling
+// Handle Resize
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-animate();
