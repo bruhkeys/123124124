@@ -7,10 +7,21 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="ui">
-        <h1>Escape the Maze!</h1>
-        <p>Use WASD to move. Don't let your "friend" catch you...</p>
+    <div id="start-screen">
+        <div class="content">
+            <h1>THE MAZE</h1>
+            <p>They are waiting for you.</p>
+            <button id="start-button">ENTER MAZE</button>
+            <div class="controls">
+                WASD to Move | Arrows to Rotate | Shift to Sprint
+            </div>
+        </div>
     </div>
+
+    <div id="ui" style="display: none;">
+        <p>FIND THE EXIT</p>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="script.js"></script>
 </body>
