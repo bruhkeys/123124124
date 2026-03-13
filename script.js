@@ -1,10 +1,10 @@
-// --- 1. CONFIGURATION ---
+// --- CONFIGURATION ---
 const UNIT = 6;
 const WALL_H = 8;
-const MOVE_SPEED = 0.08; 
-const ROT_SPEED = 0.03;  
-const GHOST_SPEED = 0.012;
-const PLAYER_RAD = 1.0; 
+const MOVE_SPEED = 0.07;  // Slower movement
+const ROT_SPEED = 0.025;  // Slower rotation
+const GHOST_SPEED = 0.01; // Slower ghost chase
+const PLAYER_RAD = 1.2;   // Wall collision buffer
 
 const mazeData = [
     [1,1,1,1,1,1,1,1,1,1,1,1],
@@ -16,25 +16,24 @@ const mazeData = [
     [1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
-// --- 2. GLOBAL VARIABLES ---
 let scene, camera, renderer, flashlight;
 const ghosts = [];
 const keys = {};
-let isRunning = false;
 let rotY = 0;
 
-// --- 3. CORE INITIALIZATION ---
 function init() {
     scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x000000, 1, 20);
+    scene.fog = new THREE.Fog(0x000000, 1, 18);
     
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    
+    // Start player in a safe empty cell
+    camera.position.set(-18, 2, -10); 
+
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    flashlight = new THREE.PointLight(0xffffff, 1.2, 18);
+    flashlight = new THREE.PointLight(0xffffff, 1.5, 15);
     scene.add(flashlight);
 
     // Build Walls
@@ -66,14 +65,15 @@ function init() {
     for(let i=0; i<3; i++) {
         const gMat = new THREE.MeshBasicMaterial({ map: friendTex, transparent: true, side: THREE.DoubleSide });
         const g = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), gMat);
-        // Randomly place ghosts in open areas
         g.position.set(Math.random()*20-10, 2, Math.random()*20-10);
         scene.add(g);
         ghosts.push(g);
     }
+
+    // Start loop immediately
+    animate();
 }
 
-// --- 4. COLLISION ENGINE ---
 function canMoveTo(x, z) {
     const c = Math.floor((x / UNIT) + (mazeData[0].length / 2) + 0.5);
     const r = Math.floor((z / UNIT) + (mazeData.length / 2) + 0.5);
@@ -81,46 +81,47 @@ function canMoveTo(x, z) {
     return mazeData[r][c] === 0;
 }
 
-// --- 5. THE GAME LOOP ---
 function animate() {
-    if (!isRunning) return;
     requestAnimationFrame(animate);
 
-    // Rotation
+    // Rotation (Arrow Keys)
     if (keys['ArrowLeft']) rotY += ROT_SPEED;
     if (keys['ArrowRight']) rotY -= ROT_SPEED;
     camera.rotation.y = rotY;
 
-    // Movement
+    // Movement (WASD)
     let dx = 0; let dz = 0;
-    const speed = keys['ShiftLeft'] ? 0.15 : MOVE_SPEED;
+    const speed = keys['ShiftLeft'] ? 0.12 : MOVE_SPEED;
 
     if (keys['KeyW']) { dx -= Math.sin(rotY) * speed; dz -= Math.cos(rotY) * speed; }
     if (keys['KeyS']) { dx += Math.sin(rotY) * speed; dz += Math.cos(rotY) * speed; }
-    if (keys['KeyA']) { dx -= Math.cos(rotY) * speed; dz -= Math.sin(rotY) * speed; }
-    if (keys['KeyD']) { dx += Math.cos(rotY) * speed; dz += Math.sin(rotY) * speed; }
+    if (keys['KeyA']) { dx -= Math.cos(rotY) * speed; dz += Math.sin(rotY) * speed; }
+    if (keys['KeyD']) { dx += Math.cos(rotY) * speed; dz -= Math.sin(rotY) * speed; }
 
-    // Collision
+    // Collision Logic (Sliding)
     const nextX = camera.position.x + dx;
     const nextZ = camera.position.z + dz;
-    if (canMoveTo(nextX + (dx > 0 ? PLAYER_RAD : -PLAYER_RAD), camera.position.z)) camera.position.x = nextX;
-    if (canMoveTo(camera.position.x, nextZ + (dz > 0 ? PLAYER_RAD : -PLAYER_RAD))) camera.position.z = nextZ;
 
-    // Ghost Logic
+    if (canMoveTo(nextX + (dx > 0 ? PLAYER_RAD : -PLAYER_RAD), camera.position.z)) {
+        camera.position.x = nextX;
+    }
+    if (canMoveTo(camera.position.x, nextZ + (dz > 0 ? PLAYER_RAD : -PLAYER_RAD))) {
+        camera.position.z = nextZ;
+    }
+
+    // Ghost Chase
     ghosts.forEach(g => {
         g.lookAt(camera.position);
         const dir = new THREE.Vector3().subVectors(camera.position, g.position).normalize();
         g.position.add(dir.multiplyScalar(GHOST_SPEED));
 
         if (g.position.distanceTo(camera.position) < 1.5) {
+            // Death Flash
             document.body.style.background = "red";
-            isRunning = false; // Pause game for "death"
             setTimeout(() => { 
                 document.body.style.background = "black";
-                camera.position.set(-20, 2, -10); 
-                isRunning = true;
-                animate();
-            }, 500);
+                camera.position.set(-18, 2, -10); // Reset position
+            }, 100);
         }
     });
 
@@ -128,25 +129,12 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// --- 6. EVENT LISTENERS ---
+// Input Listeners
 window.addEventListener('keydown', (e) => keys[e.code] = true);
 window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-// Wait for HTML to load before looking for the button
-document.addEventListener('DOMContentLoaded', () => {
-    init(); // Setup scene but don't start loop
-    
-    const startBtn = document.getElementById('start-button');
-    const startScreen = document.getElementById('start-screen');
-
-    startBtn.addEventListener('click', () => {
-        console.log("Game Starting...");
-        startScreen.style.display = 'none';
-        isRunning = true;
-        camera.position.set(-20, 2, -10); 
-        animate(); // Kick off the animation loop
-    });
-});
+// Start on Window Load
+window.onload = init;
 
 window.addEventListener('resize', () => {
     if(camera && renderer) {
